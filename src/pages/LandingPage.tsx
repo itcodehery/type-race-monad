@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
-import { useWallet } from '../context/WalletContext';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect } from "react";
+import { useWallet } from "../context/WalletContext";
+import { useNavigate } from "react-router-dom";
+import "./allstyles.css";
 
 const LandingPage: React.FC = () => {
   const { isConnected, address, connectWallet } = useWallet();
@@ -8,7 +9,7 @@ const LandingPage: React.FC = () => {
 
   useEffect(() => {
     if (isConnected) {
-      navigate('/lobby');
+      navigate("/lobby");
     }
   }, [isConnected, navigate]);
 
@@ -16,10 +17,7 @@ const LandingPage: React.FC = () => {
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
       <h1 className="text-5xl font-bold mb-8">Type Race Monad</h1>
       {!isConnected ? (
-        <button
-          onClick={connectWallet}
-          className="px-6 py-3 text-lg font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition duration-300"
-        >
+        <button onClick={connectWallet} className="main-button">
           Connect Wallet
         </button>
       ) : (

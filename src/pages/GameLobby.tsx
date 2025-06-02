@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import "./GameLobby.css";
 
 import { useGameContract, useWallet } from "../context/WalletContext";
 import { ethers } from "ethers";
@@ -161,89 +162,141 @@ const GameLobby: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-12 mt-12 text-white font-sans">
-      <h1 className="text-5xl font-extrabold text-center mb-12 tracking-tight drop-shadow-lg">
-        Game Lobby
+    <div className="game-lobby">
+      <div className="stars"></div>
+      <div className="floating-orbs">
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+      </div>
+
+      <h1 className="main-title">
+        <span className="title-text">GAME LOBBY</span>
+        <div className="title-glow"></div>
       </h1>
 
       {/* Create New Game Section */}
-      <section className="bg-gray-900 p-10 rounded-xl shadow-2xl mb-12 border border-blue-600/30 transform hover:scale-[1.01] transition-transform duration-300 ease-in-out">
-        <h2 className="text-3xl font-bold mb-6 text-blue-400">
-          Create New Game
-        </h2>
-        <p className="mb-4">Ready to challenge someone? Create a new game!</p>
-        <Link
-          to="/create"
-          className="inline-block px-10 py-5 text-xl font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-700 rounded-full shadow-lg hover:shadow-xl hover:from-purple-700 hover:to-indigo-800 transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-500 focus:ring-opacity-50"
-        >
-          Create Game
+      <section className="section create-section">
+        <div className="section-header">
+          <h2 className="section-title">⚡ Create New Game</h2>
+          <div className="pulse-ring"></div>
+        </div>
+        <p className="section-desc">
+          Ready to challenge someone? Create a new game and dominate the
+          battlefield!
+        </p>
+        <Link to="/create" className="btn btn-primary">
+          <span className="btn-text">🎮 Create Game</span>
+          <div className="btn-shine"></div>
         </Link>
       </section>
 
       {/* Available Games Section */}
-      <section className="bg-gray-900 p-10 rounded-xl shadow-2xl mb-12 border border-green-600/30 transform hover:scale-[1.01] transition-transform duration-300 ease-in-out">
-        <h2 className="text-3xl font-bold mb-6 text-green-400">
-          Available Games
-        </h2>
-        {isLoading && <p>Loading games...</p>}
-        {error && <p className="text-red-500">{error}</p>}
+      <section className="section games-section">
+        <div className="section-header">
+          <h2 className="section-title">🎯 Available Games</h2>
+          <div className="section-counter">{availableGames.length} Games</div>
+        </div>
+        {isLoading && (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Loading epic battles...</p>
+          </div>
+        )}
+        {error && <p className="error">⚠️ {error}</p>}
         {!isLoading && availableGames.length === 0 && (
-          <p>No available games found.</p>
+          <div className="empty-state">
+            <div className="empty-icon">🎮</div>
+            <p>No battles available. Be the first to create one!</p>
+          </div>
         )}
 
         {!isLoading && availableGames.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {availableGames.map((game) => (
+          <div className="games-grid">
+            {availableGames.map((game, index) => (
               <div
                 key={game.gameId}
-                className="bg-gray-800 p-8 rounded-xl shadow-lg border border-gray-700 hover:border-blue-500 transition-all duration-300 ease-in-out transform hover:-translate-y-1 hover:scale-[1.02] flex flex-col"
+                className="game-card"
+                style={{ "--delay": `${index * 100}ms` } as React.CSSProperties}
               >
-                <h3 className="text-2xl font-bold mb-3 text-blue-300">
-                  Game #{game.gameId}
-                </h3>
-                <p className="text-gray-300 mb-2 text-lg">
-                  Stake:{" "}
-                  <span className="font-mono text-yellow-400">
-                    {game.stakeAmount} MON
-                  </span>
-                </p>
-                <p className="truncate text-gray-400 mb-4">
-                  Text Preview: {game.textToType.substring(0, 50)}...
-                </p>
-                <p className="text-sm text-gray-500 mb-4">
-                  Players: {game.player1.slice(0, 6)}... /{" "}
-                  {game.player2 !== ethers.ZeroAddress
-                    ? game.player2.slice(0, 6) + "..."
-                    : "Waiting..."}
-                </p>
-                {/* Only show Join Game button if game is waiting for a player AND current user is not player1 */}
-                {game.player2 === ethers.ZeroAddress &&
-                  address?.toLowerCase() !== game.player1.toLowerCase() && (
-                    <button
-                      onClick={() =>
-                        handleJoinGame(game.gameId, game.stakeAmount)
-                      }
-                      className={`mt-auto inline-block px-6 py-3 text-md font-semibold text-white rounded-lg shadow transition duration-300 ease-in-out ${
-                        isJoining === game.gameId
-                          ? "bg-gray-500 cursor-not-allowed"
-                          : "bg-green-600 hover:bg-green-700 transform hover:scale-105"
-                      }`}
-                      disabled={isJoining === game.gameId}
-                    >
-                      {isJoining === game.gameId ? "Joining..." : "Join Game"}
-                    </button>
-                  )}
-                {/* Show View Game link if the game is full (has a player2) or if current user is player1 (and game is waiting) */}
-                {(game.player2 !== ethers.ZeroAddress ||
-                  (game.player1.toLowerCase() === address?.toLowerCase() &&
-                    game.player2 === ethers.ZeroAddress)) && (
-                  <Link
-                    to={`/game/${game.gameId}`}
-                    className="mt-auto inline-block px-6 py-3 text-md font-semibold text-white bg-blue-600 rounded-lg shadow hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105"
+                <div className="card-glow"></div>
+                <div className="card-header">
+                  <h3 className="game-title">
+                    <span className="game-id">#{game.gameId}</span>
+                    <span className="battle-text">BATTLE</span>
+                  </h3>
+                  <div className="status-indicator active"></div>
+                </div>
+
+                <div className="stake-display">
+                  <div className="stake-icon">💰</div>
+                  <div className="stake-info">
+                    <span className="stake-label">Prize Pool</span>
+                    <span className="stake-amount">{game.stakeAmount} MON</span>
+                  </div>
+                </div>
+
+                <div className="game-preview">
+                  <span className="preview-label">Challenge:</span>
+                  <p className="game-text">
+                    {game.textToType.substring(0, 50)}...
+                  </p>
+                </div>
+
+                <div className="players-info">
+                  <div className="player-slot filled">
+                    <div className="player-avatar"></div>
+                    <span>{game.player1.slice(0, 6)}...</span>
+                  </div>
+                  <div className="vs-indicator">VS</div>
+                  <div
+                    className={`player-slot ${
+                      game.player2 !== ethers.ZeroAddress ? "filled" : "waiting"
+                    }`}
                   >
-                    View Game
-                  </Link>
-                )}
+                    <div className="player-avatar"></div>
+                    <span>
+                      {game.player2 !== ethers.ZeroAddress
+                        ? game.player2.slice(0, 6) + "..."
+                        : "YOU?"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="card-actions">
+                  {game.player2 === ethers.ZeroAddress &&
+                    address?.toLowerCase() !== game.player1.toLowerCase() && (
+                      <button
+                        onClick={() =>
+                          handleJoinGame(game.gameId, game.stakeAmount)
+                        }
+                        className={`btn ${
+                          isJoining === game.gameId
+                            ? "btn-disabled"
+                            : "btn-success"
+                        }`}
+                        disabled={isJoining === game.gameId}
+                      >
+                        <span className="btn-text">
+                          {isJoining === game.gameId
+                            ? "🔄 Joining..."
+                            : "⚔️ Join Battle"}
+                        </span>
+                        <div className="btn-shine"></div>
+                      </button>
+                    )}
+                  {(game.player2 !== ethers.ZeroAddress ||
+                    (game.player1.toLowerCase() === address?.toLowerCase() &&
+                      game.player2 === ethers.ZeroAddress)) && (
+                    <Link
+                      to={`/game/${game.gameId}`}
+                      className="btn btn-secondary"
+                    >
+                      <span className="btn-text">👁️ View Battle</span>
+                      <div className="btn-shine"></div>
+                    </Link>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -251,13 +304,18 @@ const GameLobby: React.FC = () => {
       </section>
 
       {/* My Active Games Section */}
-      <section className="bg-gray-900 p-10 rounded-xl shadow-2xl border border-yellow-600/30 transform hover:scale-[1.01] transition-transform duration-300 ease-in-out">
-        <h2 className="text-3xl font-bold mb-6 text-yellow-400">
-          My Active Games
-        </h2>
-        <p className="text-gray-400 text-lg">
-          Your active games will appear here once implemented.
-        </p>
+      <section className="section active-games-section">
+        <div className="section-header">
+          <h2 className="section-title">🏆 My Active Games</h2>
+          <div className="coming-soon-badge">Coming Soon</div>
+        </div>
+        <div className="placeholder-content">
+          <div className="placeholder-icon">⚡</div>
+          <p>Your epic battles will appear here once implemented.</p>
+          <p className="sub-text">
+            Track your victories and claim your rewards!
+          </p>
+        </div>
       </section>
     </div>
   );

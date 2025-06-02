@@ -2,10 +2,11 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGameContract } from "../context/WalletContext";
 import { ethers } from "ethers";
+import "./GameCreation.css";
 
-const GameCreation: React.FC = () => {
+const GameCreation = () => {
   const [textToType, setTextToType] = useState("");
-  const [stakeAmount, setStakeAmount] = useState("0.1"); // Default stake
+  const [stakeAmount, setStakeAmount] = useState("0.1");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const gameContract = useGameContract();
@@ -42,7 +43,7 @@ const GameCreation: React.FC = () => {
       console.log("Transaction confirmed:", receipt);
 
       const gameCreatedEvent = receipt?.logs?.find(
-        (log: any) =>
+        (log: { topics: ReadonlyArray<string>; data: string }) =>
           gameContract.interface.parseLog(log)?.name === "GameCreated"
       );
 
@@ -61,99 +62,160 @@ const GameCreation: React.FC = () => {
         alert("Game created, but could not retrieve game ID from event.");
         navigate("/lobby");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating game:", error);
-      alert(`Failed to create game: ${error.reason || error.message}`);
+      alert(`Failed to create game: ${error}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="container mx-auto px-4 py-12 mt-12 text-white font-sans">
-      <h1 className="text-5xl font-extrabold text-center mb-12 tracking-tight drop-shadow-lg">
-        Create New Game
-      </h1>
+    <div className="game-creation-container">
+      <div className="stars-bg"></div>
 
-      {/* Custom Paragraph Input */}
-      <section className="bg-gray-900 p-10 rounded-xl shadow-2xl mb-12 border border-blue-600/30 transform hover:scale-[1.01] transition-transform duration-300 ease-in-out">
-        <h2 className="text-3xl font-bold mb-6 text-blue-400">Typing Text</h2>
-        <textarea
-          className="w-full p-5 rounded-lg bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:border-transparent transition-all duration-300 ease-in-out text-lg"
-          rows={10}
-          placeholder="Enter your custom typing text here..."
-          value={textToType}
-          onChange={(e) => setTextToType(e.target.value)}
-        ></textarea>
-        {/* Placeholder for paragraph library selector */}
-        {/* <button className="mt-4 px-4 py-2 bg-blue-600 rounded-md hover:bg-blue-700">Select from Library</button> */}
-      </section>
+      <header className="game-header">
+        <h1 className="game-title">CREATE NEW GAME</h1>
+        <p className="game-subtitle">
+          🎮 Ready to challenge someone? Create a new game and dominate the
+          battlefield!
+        </p>
+      </header>
 
-      {/* Stake Amount Selection */}
-      <section className="bg-gray-900 p-10 rounded-xl shadow-2xl mb-12 border border-green-600/30 transform hover:scale-[1.01] transition-transform duration-300 ease-in-out">
-        <h2 className="text-3xl font-bold mb-6 text-green-400">
-          Stake Amount (MON)
-        </h2>
-        <input
-          type="number"
-          step="0.01"
-          className="w-1/3 p-4 rounded-lg bg-gray-800 text-white placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-green-500 focus:border-transparent transition-all duration-300 ease-in-out text-lg"
-          placeholder="e.g., 0.1"
-          value={stakeAmount}
-          onChange={(e) => setStakeAmount(e.target.value)}
-        />
-        {/* Stake presets */}
-        <div className="mt-6 flex flex-wrap gap-4">
-          <button
-            className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 text-white font-semibold shadow-md transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50"
-            onClick={() => setStakeAmount("0.1")}
-          >
-            0.1 MON
-          </button>
-          <button
-            className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 text-white font-semibold shadow-md transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50"
-            onClick={() => setStakeAmount("0.5")}
-          >
-            0.5 MON
-          </button>
-          <button
-            className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 text-white font-semibold shadow-md transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50"
-            onClick={() => setStakeAmount("1")}
-          >
-            1 MON
-          </button>
+      <div className="game-cards-container">
+        {/* Typing Text Card */}
+        <div className="game-card text-card">
+          <div className="card-header">
+            <div className="card-icon">⚡</div>
+            <h2 className="card-title">Typing Challenge</h2>
+          </div>
+          <div className="card-content">
+            <textarea
+              className="text-input"
+              rows={8}
+              placeholder="Enter your custom typing text here... Make it challenging! 🔥"
+              value={textToType}
+              onChange={(e) => setTextToType(e.target.value)}
+            />
+            <div className="input-stats">
+              <span className="char-count">{textToType.length} characters</span>
+              <span className="word-count">
+                {
+                  textToType
+                    .trim()
+                    .split(/\s+/)
+                    .filter((word) => word.length > 0).length
+                }{" "}
+                words
+              </span>
+            </div>
+          </div>
         </div>
-      </section>
 
-      {/* Game Preview and Create Button */}
-      <section className="bg-gray-900 p-10 rounded-xl shadow-2xl border border-purple-600/30 transform hover:scale-[1.01] transition-transform duration-300 ease-in-out">
-        <h2 className="text-3xl font-bold mb-6 text-purple-400">
-          Game Preview
-        </h2>
-        <p className="mb-4 text-lg">
-          Text Preview:{" "}
-          <span className="text-gray-300 font-mono">
-            {textToType.substring(0, 200)}...
-          </span>
-        </p>
-        <p className="mb-6 text-lg">
-          Stake Amount:{" "}
-          <span className="text-yellow-400 font-semibold">
-            {stakeAmount} MON
-          </span>
-        </p>
-        <button
-          className={`mt-6 px-10 py-5 text-xl font-bold text-white rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-purple-500 focus:ring-opacity-50 ${
-            isLoading
-              ? "bg-gray-600 cursor-not-allowed"
-              : "bg-gradient-to-r from-purple-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800"
-          }`}
-          onClick={handleCreateGame}
-          disabled={isLoading}
-        >
-          {isLoading ? "Creating Game..." : "Create Game"}
-        </button>
-      </section>
+        {/* Stake Amount Card */}
+        <div className="game-card stake-card">
+          <div className="card-header">
+            <div className="card-icon">💰</div>
+            <h2 className="card-title">Stake Amount</h2>
+          </div>
+          <div className="card-content">
+            <div className="stake-input-container">
+              <input
+                type="number"
+                step="0.01"
+                className="stake-input"
+                placeholder="0.1"
+                value={stakeAmount}
+                onChange={(e) => setStakeAmount(e.target.value)}
+              />
+              <span className="currency-label">MON</span>
+            </div>
+
+            <div className="stake-presets">
+              <button
+                className="preset-btn"
+                onClick={() => setStakeAmount("0.1")}
+              >
+                0.1 MON
+              </button>
+              <button
+                className="preset-btn"
+                onClick={() => setStakeAmount("0.5")}
+              >
+                0.5 MON
+              </button>
+              <button
+                className="preset-btn"
+                onClick={() => setStakeAmount("1")}
+              >
+                1 MON
+              </button>
+              <button
+                className="preset-btn"
+                onClick={() => setStakeAmount("5")}
+              >
+                5 MON
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Game Preview Card */}
+        <div className="game-card preview-card">
+          <div className="card-header">
+            <div className="card-icon">🎯</div>
+            <h2 className="card-title">Game Preview</h2>
+          </div>
+          <div className="card-content">
+            <div className="preview-section">
+              <label className="preview-label">Text Preview:</label>
+              <div className="text-preview">
+                {textToType.substring(0, 150) || "No text entered yet..."}
+                {textToType.length > 150 && "..."}
+              </div>
+            </div>
+
+            <div className="preview-section">
+              <label className="preview-label">Stake Amount:</label>
+              <div className="stake-preview">
+                <span className="stake-amount">{stakeAmount}</span>
+                <span className="stake-currency">MON</span>
+              </div>
+            </div>
+
+            <div className="game-stats">
+              <div className="stat-item">
+                <span className="stat-label">Difficulty:</span>
+                <span className="stat-value">
+                  {textToType.length < 100
+                    ? "Easy 🟢"
+                    : textToType.length < 300
+                    ? "Medium 🟡"
+                    : "Hard 🔴"}
+                </span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Estimated Time:</span>
+                <span className="stat-value">
+                  {Math.max(1, Math.ceil(textToType.length / 50))} min
+                </span>
+              </div>
+            </div>
+
+            <button
+              className={`create-game-btn ${isLoading ? "loading" : ""}`}
+              onClick={handleCreateGame}
+              disabled={isLoading}
+            >
+              <span className="btn-icon">🎮</span>
+              <span className="btn-text">
+                {isLoading ? "Creating Game..." : "CREATE GAME"}
+              </span>
+              <span className="btn-glow"></span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

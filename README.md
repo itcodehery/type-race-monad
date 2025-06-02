@@ -1,12 +1,30 @@
-# React + Vite
+# Type Race Monad 🏎️💨
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A competitive typing game where players can bet Monad (MON) tokens on their typing skills! Built on the Monad Blockchain.
 
-Currently, two official plugins are available:
+## What is Type Race Monad?
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Type Race Monad is an exciting typing game that combines speed typing challenges with Monad token betting. Players can put their MON tokens on the line and compete against others to see who has the fastest and most accurate typing skills.
 
-## Expanding the ESLint configuration
+## Features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- 🎯 Real-time typing competitions
+- 💰 Bet MON tokens on your performance
+- 📊 Global leaderboard system
+- 🏆 Win MON tokens by outtyping your opponents
+- 📈 Track your typing speed and accuracy
+- 🔒 Secure wallet integration
+
+## How to Play
+
+1. Connect your wallet containing MON tokens
+2. Choose a typing room and stake amount
+3. Wait for other players to join
+4. Type the displayed text as fast and accurately as possible
+5. Winners receive the pot of staked MON tokens
+
+## Technical Requirements
+
+- Web3 compatible wallet (MetaMask recommended)
+- MON tokens for betting
+- Modern web browser

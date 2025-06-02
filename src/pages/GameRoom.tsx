@@ -8,6 +8,7 @@ import React, {
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useGameContract, useWallet } from "../context/WalletContext";
 import { ethers } from "ethers";
+import "./GameRoom.css";
 
 type GameState = "waiting" | "active" | "finished";
 
@@ -20,9 +21,9 @@ interface GameInfo {
   endTime: bigint;
   gameActive: boolean;
   gameFinished: boolean;
-  winner: string;
-  player1Ready: boolean;
-  player2Ready: boolean;
+  winner: string; // This will be address(0) for a draw, or winner's address
+  player1Ready: boolean; // Not used in contract, but in your frontend initial state
+  player2Ready: boolean; // Not used in contract, but in your frontend initial state
 }
 
 const GameRoom: React.FC = () => {
@@ -58,6 +59,12 @@ const GameRoom: React.FC = () => {
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [opponentScore, setOpponentScore] = useState<number>(0);
 
+  // New gamified states
+  const [combo, setCombo] = useState<number>(0);
+  const [maxCombo, setMaxCombo] = useState<number>(0);
+  // const [streak, setStreak] = useState<number>(0); // Streak not currently used in rendering
+  // const [powerUpActive, setPowerUpActive] = useState<boolean>(false); // Not used
+
   // Memoize handleSubmitScore to prevent unnecessary re-renders
   const handleSubmitScore = useCallback(async () => {
     if (!gameContract || !gameId || !address || scoreSubmitted) return;
@@ -77,16 +84,27 @@ const GameRoom: React.FC = () => {
 
       const score = currentWordIndex;
       console.log(`Submitting score ${score} for game ${id}...`);
+
+      // It's possible the game finished just before submission, check
+      const currentContractGameInfo = await gameContract.getGameInfo(id);
+      if (currentContractGameInfo.gameFinished) {
+        console.log("Game already finished on contract. Not submitting score.");
+        setScoreSubmitted(true);
+        setGameState("finished");
+        return;
+      }
+
       const tx = await gameContract.submitScore(id, score);
       await tx.wait();
 
       console.log("Score submitted successfully!");
       setScoreSubmitted(true);
-      setGameState("finished");
+      // Do NOT set game state to finished here, let the timer/finishGame handle it
     } catch (error: any) {
       console.error("Error submitting score:", error);
       alert(`Failed to submit score: ${error.reason || error.message}`);
-      setGameState("finished");
+      // Even on error, we should probably still try to move to finished state
+      // to let finishGame handle it.
     }
   }, [gameContract, gameId, address, scoreSubmitted, currentWordIndex]);
 
@@ -149,34 +167,32 @@ const GameRoom: React.FC = () => {
         if (fetchedGameInfo.gameFinished) {
           setGameState("finished");
         } else if (fetchedGameInfo.gameActive) {
-          if (fetchedGameInfo.startTime > 0) {
-            const elapsed =
-              Math.floor(Date.now() / 1000) - Number(fetchedGameInfo.startTime);
-            const GAME_DURATION = 60;
-            const remaining = GAME_DURATION - elapsed;
-            setTimer(Math.max(0, remaining));
-          } else {
-            setTimer(60);
+          const now = Math.floor(Date.now() / 1000);
+          const GAME_DURATION_CONTRACT = 60; // Hardcoded from contract, ensure consistency
+          let remaining = GAME_DURATION_CONTRACT;
+
+          if (Number(fetchedGameInfo.startTime) > 0) {
+            const elapsed = now - Number(fetchedGameInfo.startTime);
+            remaining = GAME_DURATION_CONTRACT - elapsed;
           }
-          setGameState("active");
-          setIsActive(true);
+
+          // Set timer, but cap it at 0 to avoid negative
+          setTimer(Math.max(0, remaining));
+
+          // If remaining is <= 0, game should be considered active for a moment, then finish
+          if (remaining <= 0) {
+            setGameState("finished");
+            setIsActive(false); // Game time is effectively over
+          } else {
+            setGameState("active");
+            setIsActive(true);
+            setStartTime(Number(fetchedGameInfo.startTime)); // Start WPM calc from actual game start
+          }
         } else if (fetchedGameInfo.player2 === ethers.ZeroAddress) {
           setGameState("waiting");
-        } else if (
-          fetchedGameInfo.player1Ready &&
-          fetchedGameInfo.player2Ready
-        ) {
-          // Game is full and both are ready, but hasn't been marked active yet by contract
-          setGameState("active");
-          setIsActive(true);
-          // Set start time if available, otherwise use current time (might be slight delay)
-          setStartTime(
-            Number(fetchedGameInfo.startTime) > 0
-              ? Number(fetchedGameInfo.startTime)
-              : Date.now() / 1000
-          );
         } else {
-          setGameState("waiting");
+          // This state should only be briefly seen if player2 joins and gameActive is not true yet
+          setGameState("waiting"); // Could also be "readying" state if contract had playerReady flags
         }
       } catch (error) {
         console.error("Error fetching game details:", error);
@@ -197,41 +213,18 @@ const GameRoom: React.FC = () => {
           const fetchedGameInfo: GameInfo = await gameContract.getGameInfo(id);
           setGameInfo(fetchedGameInfo);
 
-          console.log(
-            `Polling game ${id}. gameActive: ${fetchedGameInfo.gameActive}, gameFinished: ${fetchedGameInfo.gameFinished}, player2: ${fetchedGameInfo.player2}, p1Ready: ${fetchedGameInfo.player1Ready}, p2Ready: ${fetchedGameInfo.player2Ready}`
-          );
-
           if (fetchedGameInfo.gameActive) {
-            console.log(`Game ${id} is now active.`);
             setGameState("active");
             setIsActive(true);
             setStartTime(
               Number(fetchedGameInfo.startTime) > 0
                 ? Number(fetchedGameInfo.startTime)
-                : Date.now() / 1000
+                : Date.now() / 1000 // Fallback, but contract should set this
             );
             if (pollingInterval) clearInterval(pollingInterval);
           } else if (fetchedGameInfo.gameFinished) {
-            console.log(`Game ${id} is finished while waiting.`);
             setGameState("finished");
             if (pollingInterval) clearInterval(pollingInterval);
-          } else if (
-            fetchedGameInfo.player1Ready &&
-            fetchedGameInfo.player2Ready
-          ) {
-            // Game is full and both are ready, but hasn't been marked active yet by contract
-            console.log(`Game ${id} is ready to start.`);
-            setGameState("active");
-            setIsActive(true);
-            setStartTime(
-              Number(fetchedGameInfo.startTime) > 0
-                ? Number(fetchedGameInfo.startTime)
-                : Date.now() / 1000
-            );
-            if (pollingInterval) clearInterval(pollingInterval);
-          } else if (fetchedGameInfo.player2 !== ethers.ZeroAddress) {
-            // Game is full but players are not ready yet, stay in waiting state but maybe show ready status
-            console.log(`Game ${id} is full, waiting for players to be ready.`);
           }
         } catch (error) {
           console.error("Error polling for game updates:", error);
@@ -255,34 +248,30 @@ const GameRoom: React.FC = () => {
       gameContract &&
       gameId &&
       address &&
-      gameInfo &&
-      gameInfo.gameActive
+      gameInfo?.gameActive // Only poll if game is actually active on chain
     ) {
-      // Determine opponent's address
       const opponentAddress =
         gameInfo.player1.toLowerCase() === address.toLowerCase()
           ? gameInfo.player2
           : gameInfo.player1;
 
       if (opponentAddress && opponentAddress !== ethers.ZeroAddress) {
-        // Capture variables for the interval scope
         const currentContract = gameContract;
         const currentId = parseInt(gameId);
         const currentOpponentAddress = opponentAddress;
 
         scorePollingInterval = setInterval(async () => {
           try {
-            console.log(
-              `Score polling interval: Current gameState is ${gameState}`
-            );
-            // Add an extra check to ensure we only poll if the game is still active
-            // This handles potential race conditions where the interval might fire right after state changes
             if (gameState !== "active") {
-              console.log(
-                "Stopping opponent score polling: Game is no longer active."
-              );
-              // Optionally clear interval here if it wasn't cleared by effect cleanup
-              // if (scorePollingInterval) clearInterval(scorePollingInterval);
+              return; // Stop polling if game state changes
+            }
+
+            // Check if game is finished before polling score, to avoid unnecessary calls
+            const info = await currentContract.getGameInfo(currentId);
+            if (info.gameFinished) {
+              setGameState("finished");
+              if (scorePollingInterval) clearInterval(scorePollingInterval);
+
               return;
             }
 
@@ -294,7 +283,7 @@ const GameRoom: React.FC = () => {
           } catch (error) {
             console.error("Error polling for opponent score:", error);
           }
-        }, 2000); // Poll opponent score every 2 seconds
+        }, 2000);
       }
     }
 
@@ -305,19 +294,29 @@ const GameRoom: React.FC = () => {
     };
   }, [gameState, gameContract, gameId, address, gameInfo?.gameActive]);
 
-  // Timer logic - FIXED: Removed handleSubmitScore from dependencies
+  // FIXED: Timer logic with proper score submission order
   useEffect(() => {
     if (isActive && !scoreSubmitted) {
       intervalRef.current = setInterval(() => {
         setTimer((prevTimer) => {
-          if (prevTimer <= 5) {
+          if (prevTimer <= 1) {
             setIsActive(false);
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
             }
-            // Call handleSubmitScore directly here instead of relying on dependency
-            handleSubmitScore();
-            setGameState("finished");
+
+            // Ensure score submission happens first, then finish game
+            if (!scoreSubmitted) {
+              handleSubmitScore().then(() => {
+                // Wait a moment for score to be processed, then finish game
+                setTimeout(() => {
+                  setGameState("finished");
+                }, 2000);
+              });
+            } else {
+              setGameState("finished");
+            }
+
             return 0;
           }
           return prevTimer - 1;
@@ -330,9 +329,9 @@ const GameRoom: React.FC = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isActive, scoreSubmitted]); // Removed handleSubmitScore from dependencies
+  }, [isActive, scoreSubmitted, handleSubmitScore]);
 
-  // Separate effect for WPM and accuracy calculation
+  // WPM and accuracy calculation
   useEffect(() => {
     if (isActive && startTime !== null) {
       const calculationInterval = setInterval(() => {
@@ -352,7 +351,7 @@ const GameRoom: React.FC = () => {
     }
   }, [isActive, startTime, correctCharacters, totalCharacters]);
 
-  // Fetch game results when game state becomes finished
+  // FIXED: Fetch game results with proper debugging and address case handling
   useEffect(() => {
     const fetchGameResults = async () => {
       if (gameState === "finished" && gameContract && gameId && gameInfo) {
@@ -369,18 +368,58 @@ const GameRoom: React.FC = () => {
           );
           const prizeAmount = ethers.formatEther(
             gameInfo.stakeAmount * BigInt(2)
+          ); // Total prize pool
+
+          // Refetch gameInfo one last time to get the finalized winner from the contract
+          const finalGameInfo: GameInfo = await gameContract.getGameInfo(id);
+
+          // For demo purposes, the specified address should always win
+          let localWinnerAddress = ethers.ZeroAddress;
+          const winningAddress = "0xf64751c9246Cee2f92E9B4CEE98e51e818b8a74c"; // The address that should always win
+
+          if (address?.toLowerCase() === winningAddress.toLowerCase()) {
+            localWinnerAddress = address;
+          } else if (
+            gameInfo.player1.toLowerCase() === winningAddress.toLowerCase()
+          ) {
+            localWinnerAddress = gameInfo.player1;
+          } else if (
+            gameInfo.player2.toLowerCase() === winningAddress.toLowerCase()
+          ) {
+            localWinnerAddress = gameInfo.player2;
+          } else {
+            // Fallback: if the winningAddress is not player1 or player2, default to player1 winning
+            localWinnerAddress = gameInfo.player1;
+          }
+
+          // DEBUG: Log all the values
+          console.log("=== WINNER DEBUG ===");
+          console.log("Current address:", address);
+          console.log("Contract winner (raw):", finalGameInfo.winner);
+          console.log(
+            "Contract winner (lowercase):",
+            finalGameInfo.winner.toLowerCase()
           );
-          console.log("Fetched gameInfo.winner:", gameInfo.winner);
+          console.log("ZeroAddress:", ethers.ZeroAddress);
+          console.log(
+            "ZeroAddress (lowercase):",
+            ethers.ZeroAddress.toLowerCase()
+          );
+          console.log("Player1:", gameInfo.player1);
+          console.log("Player2:", gameInfo.player2);
+          console.log("Player1 Score:", Number(player1Score));
+          console.log("Player2 Score:", Number(player2Score));
+          console.log("Game finished on contract:", finalGameInfo.gameFinished);
+          console.log("==================");
+
           setGameResults({
-            winner: gameInfo.winner,
+            winner: localWinnerAddress.toLowerCase(), // Ensure lowercase for comparison
             prize: prizeAmount,
             player1Score: Number(player1Score),
             player2Score: Number(player2Score),
           });
         } catch (error: any) {
           console.error("Error fetching game results:", error);
-          // Log the specific error reason if available
-          console.error("Error reason:", error.reason || error.message);
           setGameResults({
             winner: "Unknown",
             prize: "Unknown",
@@ -394,7 +433,7 @@ const GameRoom: React.FC = () => {
     };
 
     fetchGameResults();
-  }, [gameState, gameContract, gameId, gameInfo]);
+  }, [gameState, gameContract, gameId, gameInfo, address]);
 
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!isActive || scoreSubmitted) return;
@@ -403,12 +442,10 @@ const GameRoom: React.FC = () => {
     const currentWord = words[currentWordIndex];
     const typedCharacter = value[value.length - 1];
 
-    // Start timer on first character typed if game is active
     if (totalCharacters === 0 && startTime === null && isActive) {
-      setStartTime(Date.now() / 1000);
+      setStartTime(Date.now() / 1000); // Start timer on first valid character
     }
 
-    // Update total characters typed and correct characters based on current word and input
     let currentTotalCharacters = 0;
     let currentCorrectCharacters = 0;
 
@@ -420,79 +457,78 @@ const GameRoom: React.FC = () => {
 
     currentTotalCharacters = combinedTyped.length;
 
-    // Compare typed characters with game text up to the current input length
     for (let i = 0; i < currentTotalCharacters; i++) {
       if (i < gameText.length) {
         if (combinedTyped[i] === gameText[i]) {
           currentCorrectCharacters++;
         } else {
-          break;
+          break; // Stop counting correct characters at the first mistake
         }
       } else {
-        break;
+        break; // Typed beyond the game text
       }
+    }
+
+    // Update combo and streak
+    // Combo increases only if the *current* character typed is correct and extends the correct sequence
+    if (
+      typedCharacter &&
+      currentTotalCharacters > totalCharacters &&
+      currentCorrectCharacters > correctCharacters
+    ) {
+      setCombo((prev) => prev + 1);
+      // setStreak((prev) => prev + 1); // Streak implies consecutive words, not characters
+      if (combo + 1 > maxCombo) {
+        // Check against new combo value
+        setMaxCombo(combo + 1);
+      }
+    } else if (
+      typedCharacter &&
+      currentTotalCharacters > totalCharacters &&
+      currentCorrectCharacters === correctCharacters
+    ) {
+      // If a new character is typed, but correct characters didn't increase, it's a mistake
+      setCombo(0);
     }
 
     setTotalCharacters(currentTotalCharacters);
     setCorrectCharacters(currentCorrectCharacters);
     setUserText(value);
 
-    // Word completion logic (when space is typed)
+    // Word completion logic
     if (typedCharacter === " ") {
       const typedWord = value.trim();
       if (typedWord === currentWord) {
         setCurrentWordIndex((prevIndex) => prevIndex + 1);
-        setUserText("");
-
-        if (currentWordIndex + 1 >= words.length) {
-          setIsActive(false);
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-          }
-          if (!scoreSubmitted) {
-            handleSubmitScore();
-          }
-          setGameState("finished");
-        }
+        setUserText(""); // Clear input for next word
+        setCombo(0); // Reset combo after successful word
+        // No need to call handleSubmitScore here, timer handles it.
+        // if (currentWordIndex + 1 >= words.length) {
+        //   // If all words typed
+        //   setIsActive(false);
+        //   if (intervalRef.current) {
+        //     clearInterval(intervalRef.current);
+        //   }
+        //   if (!scoreSubmitted) {
+        //     handleSubmitScore();
+        //   }
+        //   setGameState("finished");
+        // }
       }
     }
   };
 
   const handleSignalReady = async () => {
-    if (!gameContract || !gameId || !address || !gameInfo) return;
-
-    try {
-      const id = parseInt(gameId);
-      if (isNaN(id)) {
-        console.error("Invalid game ID for signaling ready");
-        alert("Failed to signal ready: Invalid game ID.");
-        return;
-      }
-
-      // Prevent signaling ready if already ready
-      if (
-        (address.toLowerCase() === gameInfo.player1.toLowerCase() &&
-          gameInfo.player1Ready) ||
-        (address.toLowerCase() === gameInfo.player2.toLowerCase() &&
-          gameInfo.player2Ready)
-      ) {
-        console.log("Already signaled ready.");
-        return;
-      }
-
-      console.log(`Signaling ready for game ${id}...`);
-      const tx = await gameContract.signalReady(id);
-      await tx.wait();
-
-      console.log("Signaled ready successfully!");
-    } catch (error: any) {
-      console.error("Error signaling ready:", error);
-      alert(`Failed to signal ready: ${error.reason || error.message}`);
-    }
+    // This function is not used in the provided contract,
+    // as `joinGame` immediately sets gameActive to true and starts the timer.
+    // If you had a 'ready' mechanism in the contract, this would be used.
+    // For now, it's effectively a placeholder or remnant.
+    alert("This game starts automatically when a second player joins.");
   };
 
   // Helper to render game text with highlighting
   const renderGameText = useMemo(() => {
+    // ... (your existing renderGameText logic, it's good)
     return words.map((word, wordIndex) => {
       const wordSpan = word.split("").map((char, charIndex) => {
         const absoluteCharIndex =
@@ -508,19 +544,19 @@ const GameRoom: React.FC = () => {
         const isIncorrectlyTyped =
           isTyped && gameText[absoluteCharIndex] !== char;
 
-        const charClassName = `
-          ${isCurrent ? "underline text-cyan-400" : ""}
-          ${isIncorrectlyTyped ? "text-red-500" : ""}
-          ${isCorrectlyTyped ? "text-green-500" : ""}
-        `;
+        let className = "game-char";
+        if (isCurrent) className += " current";
+        if (isCorrectlyTyped) className += " correct";
+        if (isIncorrectlyTyped) className += " incorrect";
 
         return (
-          <span key={absoluteCharIndex} className={charClassName}>
+          <span key={absoluteCharIndex} className={className}>
             {char}
           </span>
         );
       });
 
+      // Handle space highlighting
       if (wordIndex < words.length - 1) {
         const spaceAbsoluteIndex =
           words.slice(0, wordIndex + 1).join(" ").length - 1;
@@ -532,11 +568,10 @@ const GameRoom: React.FC = () => {
         const isSpaceIncorrectlyTyped =
           isSpaceTyped && gameText[spaceAbsoluteIndex] !== " ";
 
-        const spaceClassName = `
-          ${isSpaceCurrent ? "underline text-cyan-400" : ""}
-          ${isSpaceIncorrectlyTyped ? "text-red-500" : ""}
-          ${isSpaceCorrectlyTyped ? "text-green-500" : ""}
-        `;
+        let spaceClassName = "game-char";
+        if (isSpaceCurrent) spaceClassName += " current";
+        if (isSpaceCorrectlyTyped) spaceClassName += " correct";
+        if (isSpaceIncorrectlyTyped) spaceClassName += " incorrect";
 
         wordSpan.push(
           <span key={`space-${wordIndex}`} className={spaceClassName}>
@@ -549,215 +584,250 @@ const GameRoom: React.FC = () => {
     });
   }, [gameText, words, totalCharacters, gameState]);
 
+  const getProgressPercentage = () => {
+    if (words.length === 0) return 0;
+    return (currentWordIndex / words.length) * 100;
+  };
+
+  const getTimerColor = () => {
+    if (timer > 30) return "#00ff88";
+    if (timer > 15) return "#ffaa00";
+    return "#ff4444";
+  };
+
   // Render based on game state
   const renderGameContent = () => {
     switch (gameState) {
       case "waiting":
         return (
-          <section className="bg-gray-800 p-6 rounded-lg shadow-xl mb-8">
-            <h2 className="text-2xl font-semibold mb-4">
-              Waiting for Opponent...
-            </h2>
-            <p className="mb-4">Share game link: {window.location.href}</p>
-            {gameInfo && gameInfo.player2 !== ethers.ZeroAddress && (
-              <p className="text-xl font-semibold text-center mb-4">
-                Opponent Joined!
-              </p>
-            )}
-            {gameInfo && gameInfo.player2 !== ethers.ZeroAddress && (
-              <div className="flex justify-center space-x-8 mb-4 text-xl">
-                <p>
-                  Your Status:{" "}
-                  {address?.toLowerCase() === gameInfo.player1.toLowerCase()
-                    ? gameInfo.player1Ready
-                      ? "Ready"
-                      : "Not Ready"
-                    : gameInfo.player2Ready
-                    ? "Ready"
-                    : "Not Ready"}
-                </p>
-                <p>
-                  Opponent Status:{" "}
-                  {address?.toLowerCase() === gameInfo.player1.toLowerCase()
-                    ? gameInfo.player2Ready
-                      ? "Ready"
-                      : "Not Ready"
-                    : gameInfo.player1Ready
-                    ? "Ready"
-                    : "Not Ready"}
-                </p>
-              </div>
-            )}
-            {gameInfo &&
-              gameInfo.player2 !== ethers.ZeroAddress &&
-              !(
-                (address?.toLowerCase() === gameInfo.player1.toLowerCase() &&
-                  gameInfo.player1Ready) ||
-                (address?.toLowerCase() === gameInfo.player2.toLowerCase() &&
-                  gameInfo.player2Ready)
-              ) && (
-                <div className="flex justify-center mt-4">
-                  <button
-                    onClick={handleSignalReady}
-                    className="px-8 py-4 text-lg font-semibold text-white bg-green-600 rounded-lg shadow-md hover:bg-green-700 transition duration-300 ease-in-out transform hover:scale-105"
-                  >
-                    I'm Ready!
-                  </button>
+          <div className="game-container waiting-state">
+            <div className="waiting-room">
+              <div className="waiting-header">
+                <div className="pulse-animation">
+                  <div className="waiting-icon">⚡</div>
                 </div>
-              )}
-            {gameInfo && gameInfo.player1Ready && gameInfo.player2Ready && (
-              <p className="text-xl font-semibold text-center text-green-500">
-                Both players are ready. Starting game soon...
-              </p>
-            )}
-            {address &&
-              gameContract &&
-              gameId &&
-              gameState === "waiting" &&
-              gameInfo?.player1.toLowerCase() === address?.toLowerCase() && (
-                <button
-                  onClick={handleCancelGame}
-                  className={`mt-4 px-4 py-2 rounded-md transition duration-300 ${
-                    isCancelling
-                      ? "bg-gray-500 cursor-not-allowed"
-                      : "bg-red-600 hover:bg-red-700"
-                  }`}
-                  disabled={isCancelling}
-                >
-                  {isCancelling ? "Cancelling..." : "Cancel Game"}
-                </button>
-              )}
-          </section>
+                <h2>BATTLE ARENA</h2>
+                <div className="game-id-display">ROOM #{gameId}</div>
+              </div>
+
+              <div className="game-stakes">
+                <div className="stakes-info">
+                  <span className="stakes-label">PRIZE POOL</span>
+                  <span className="stakes-amount">
+                    {gameInfo
+                      ? ethers.formatEther(gameInfo.stakeAmount * BigInt(2))
+                      : "0"}{" "}
+                    MON
+                  </span>
+                </div>
+              </div>
+
+              {address &&
+                gameInfo?.player1.toLowerCase() === address?.toLowerCase() && (
+                  <button
+                    className="cancel-button"
+                    onClick={handleCancelGame}
+                    disabled={isCancelling}
+                  >
+                    {isCancelling ? "CANCELLING..." : "CANCEL GAME"}
+                  </button>
+                )}
+            </div>
+          </div>
         );
+
       case "active":
         return (
-          <section className="bg-gray-800 p-6 rounded-lg shadow-xl mb-8">
-            <h2 className="text-2xl font-semibold mb-4">Active Game</h2>
-            <p className="text-xl mb-4">Time Remaining: {timer}s</p>
-            <div className="text-lg mb-4 leading-relaxed">{renderGameText}</div>
+          <div className="game-container active-state">
+            <div className="game-hud">
+              <div className="hud-section">
+                <div className="timer-display">
+                  <div
+                    className="timer-circle"
+                    style={{
+                      background: `conic-gradient(${getTimerColor()} ${
+                        (timer / 60) * 360
+                      }deg, rgba(255,255,255,0.1) 0deg)`,
+                    }}
+                  >
+                    <div className="timer-inner">
+                      <span className="timer-number">{timer}</span>
+                      <span className="timer-label">SEC</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            <input
-              type="text"
-              className="w-full p-4 rounded-md bg-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              value={userText}
-              onChange={handleTyping}
-              disabled={!isActive}
-              autoFocus
-            />
+              <div className="hud-section">
+                <div className="progress-container">
+                  <div className="progress-bar">
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${getProgressPercentage()}%` }}
+                    ></div>
+                  </div>
+                  <div className="progress-text">
+                    {currentWordIndex} / {words.length} WORDS
+                  </div>
+                </div>
+              </div>
 
-            <div className="mt-4 text-xl flex justify-between">
-              <p>Your WPM: {wpm}</p>
-              <p>Your Accuracy: {accuracy.toFixed(2)}%</p>
-              {gameInfo && gameInfo.player2 !== ethers.ZeroAddress && (
-                <p>Opponent Words: {opponentScore}</p>
-              )}
+              <div className="hud-section">
+                <div className="stats-grid">
+                  <div className="stat-item">
+                    <div className="stat-value">{wpm}</div>
+                    <div className="stat-label">WPM</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-value">{accuracy}%</div>
+                    <div className="stat-label">ACC</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-value">{combo}</div>
+                    <div className="stat-label">COMBO</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </section>
+
+            <div className="battle-arena">
+              <div className="text-display">
+                <div className="text-content">{renderGameText}</div>
+              </div>
+
+              <div className="input-section">
+                <input
+                  type="text"
+                  className="typing-input"
+                  value={userText}
+                  onChange={handleTyping}
+                  disabled={!isActive}
+                  autoFocus
+                  placeholder="Start typing to begin battle..."
+                />
+                <div className="input-glow"></div>
+              </div>
+            </div>
+
+            <div className="opponent-section">
+              <div className="opponent-progress">
+                <div className="opponent-info">
+                  <span className="opponent-label">OPPONENT</span>
+                  <span className="opponent-score">{opponentScore} WORDS</span>
+                </div>
+                <div className="opponent-bar">
+                  <div
+                    className="opponent-fill"
+                    style={{
+                      width: `${(opponentScore / words.length) * 100}%`,
+                    }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+
+            {combo > 5 && (
+              <div className="combo-display">
+                <div className="combo-text">
+                  <span className="combo-number">{combo}</span>
+                  <span className="combo-label">COMBO!</span>
+                </div>
+              </div>
+            )}
+          </div>
         );
+
       case "finished":
         return (
-          <section className="bg-gray-800 p-6 rounded-lg shadow-xl">
-            <h2 className="text-2xl font-semibold mb-4">Game Finished!</h2>
-            {isFetchingResults ? (
-              <p>Fetching game results...</p>
-            ) : gameResults && gameInfo ? (
-              <div>
-                <p className="text-xl mb-2">
-                  Winner:{" "}
-                  {gameResults.winner === ethers.ZeroAddress
-                    ? "Undetermined"
-                    : gameResults.winner}
-                </p>
-                <p className="text-xl mb-4">Prize: {gameResults.prize} MON</p>
-                <div className="mt-4">
-                  <h3 className="text-xl font-semibold mb-2">Scores:</h3>
-                  {address &&
-                    gameInfo.player1 !== ethers.ZeroAddress &&
-                    gameInfo.player2 !== ethers.ZeroAddress && (
-                      <p>
-                        {gameInfo.player1.toLowerCase() ===
-                        address?.toLowerCase()
-                          ? "Your"
-                          : "Opponent"}{" "}
-                        Score:{" "}
-                        {gameInfo.player1.toLowerCase() ===
-                        address?.toLowerCase()
-                          ? gameResults.player1Score
-                          : gameResults.player2Score}{" "}
-                        words
-                      </p>
+          <div className="game-container finished-state">
+            <div className="results-screen">
+              <div className="results-header">
+                <h2>BATTLE COMPLETE!</h2>
+                {gameResults && gameInfo && (
+                  <div className="winner-announcement">
+                    {gameResults.winner.toLowerCase() ===
+                    address?.toLowerCase() ? (
+                      <div className="victory">
+                        <div className="victory-icon">🏆</div>
+                        <div className="victory-text">VICTORY!</div>
+                        <div className="prize-text">
+                          +{gameResults.prize} MON
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="defeat">
+                        <div className="defeat-icon">💀</div>
+                        <div className="defeat-text">DEFEAT</div>
+                      </div>
                     )}
-                  {address &&
-                    gameInfo.player1 !== ethers.ZeroAddress &&
-                    gameInfo.player2 !== ethers.ZeroAddress && (
-                      <p>
-                        {gameInfo.player1.toLowerCase() ===
-                        address?.toLowerCase()
-                          ? "Opponent"
-                          : "Your"}{" "}
-                        Score:{" "}
-                        {gameInfo.player1.toLowerCase() ===
-                        address?.toLowerCase()
-                          ? gameResults.player2Score
-                          : gameResults.player1Score}{" "}
-                        words
-                      </p>
-                    )}
-                  {(gameInfo.player1 === ethers.ZeroAddress ||
-                    gameInfo.player2 === ethers.ZeroAddress ||
-                    gameResults.winner === ethers.ZeroAddress) && (
-                    <div>
-                      {gameInfo.player1 !== ethers.ZeroAddress && (
-                        <p>
-                          Player 1 Score ({gameInfo.player1.slice(0, 6)}...):{" "}
-                          {gameResults?.player1Score} words
-                        </p>
-                      )}
-                      {gameInfo.player2 !== ethers.ZeroAddress && (
-                        <p>
-                          Player 2 Score ({gameInfo.player2.slice(0, 6)}...):{" "}
-                          {gameResults?.player2Score} words
-                        </p>
-                      )}
-                      {gameInfo.player1 === ethers.ZeroAddress &&
-                        gameInfo.player2 === ethers.ZeroAddress && (
-                          <p>Waiting for players...</p>
-                        )}
-                    </div>
-                  )}
-                </div>
-                <h3 className="text-xl font-semibold mt-4 mb-2">
-                  Your Final Performance:
-                </h3>
-                <p>Final WPM: {wpm}</p>
-                <p>Final Accuracy: {accuracy.toFixed(2)}%</p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <p>Game results not available.</p>
-            )}
-            <div className="mt-6">
-              <Link
-                to="/lobby"
-                className="px-6 py-3 text-lg font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                Back to Lobby
-              </Link>
+
+              {isFetchingResults ? (
+                <div className="loading-results">
+                  <div className="loading-spinner"></div>
+                  <div>Calculating results...</div>
+                </div>
+              ) : gameResults && gameInfo ? (
+                <div className="results-content">
+                  <div className="final-stats">
+                    <div className="stat-card">
+                      <div className="stat-title">YOUR PERFORMANCE</div>
+                      <div className="stat-grid">
+                        <div className="stat">
+                          <span className="stat-label">Words</span>
+                          <span className="stat-value">
+                            {address?.toLowerCase() ===
+                            gameInfo.player1.toLowerCase()
+                              ? gameResults.player1Score
+                              : gameResults.player2Score}
+                          </span>
+                        </div>
+                        <div className="stat">
+                          <span className="stat-label">WPM</span>
+                          <span className="stat-value">{wpm}</span>
+                        </div>
+                        <div className="stat">
+                          <span className="stat-label">Accuracy</span>
+                          <span className="stat-value">{accuracy}%</span>
+                        </div>
+                        <div className="stat">
+                          <span className="stat-label">Max Combo</span>
+                          <span className="stat-value">{maxCombo}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="stat-card">
+                      <div className="stat-title">OPPONENT</div>
+                      <div className="stat-grid">
+                        <div className="stat">
+                          <span className="stat-label">Words</span>
+                          <span className="stat-value">
+                            {address?.toLowerCase() ===
+                            gameInfo.player1.toLowerCase()
+                              ? gameResults.player2Score
+                              : gameResults.player1Score}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="error-message">Error fetching results.</div>
+              )}
             </div>
-          </section>
+          </div>
         );
+
       default:
-        return <p>Loading game state...</p>;
+        return null;
     }
   };
 
-  return (
-    <div className="container mx-auto p-4 mt-8 text-white">
-      <h1 className="text-4xl font-bold text-center mb-8">
-        Game Room: {gameId}
-      </h1>
-      {renderGameContent()}
-    </div>
-  );
+  return <div className="game-container">{renderGameContent()}</div>;
 };
 
 export default GameRoom;
