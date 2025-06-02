@@ -28,3 +28,7 @@ Type Race Monad is an exciting typing game that combines speed typing challenges
 - Web3 compatible wallet (MetaMask recommended)
 - MON tokens for betting
 - Modern web browser
+
+## Demo Link
+
+- [Click on this Link](https://drive.google.com/file/d/1CN115WlyzksgsZduN1zAH-pIXUbphNHj/view?usp=drive_link)
