@@ -1,6 +1,6 @@
 # Type Race Monad 🏎️💨
 
-A competitive typing game where players can bet Monad (MON) tokens on their typing skills! Built on the Monad Blockchain.
+A competitive typing game where players can bet Monad (MON) tokens on their typing skills! Built on the Monad Blockchain. Built for the Monad Blitz 2025 IRL Hackathon. 
 
 ## What is Type Race Monad?
 
